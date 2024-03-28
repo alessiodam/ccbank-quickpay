@@ -25,7 +25,7 @@ To send money to another player using BoCC QuickPay, follow these steps:
 
 1. Open the Minecraft chat interface.
 
-2. Type the command `!pay <player> <amount>`, replacing `!` with the prefix you defined in `startup.lua`, `[player]` with the recipient's username, and `[amount]` with the desired payment amount.
+2. Type the command `!pay <player> <amount>`, replacing `!` with the prefix you defined in `startup.lua`, `[player]` with the recipient's BoCC username, and `[amount]` with the desired payment amount.
 
 3. Press Enter to confirm the transaction.
 
