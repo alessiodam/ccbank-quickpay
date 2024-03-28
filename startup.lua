@@ -11,7 +11,7 @@
 --- CONFIG ---
 local ADMIN_USERNAME = "changeme"        -- your MC username
 local BANK_USERNAME = "changeme"         -- your BoCC username
-local BANK_PIN = "1234"                     -- your BoCC PIN
+local BANK_PIN = "changeme"                     -- your BoCC PIN
 local PAY_THRESHOLD = 500                   -- maximum amount of money allowed to send through chat
 local CHAT_PREFIX = "!"                     -- prefix for all chat commands (ex. !pay where ! is the prefix), cannot be $
 -- if you want to use $ as the prefix, set CHAT_PREFIX to "" (Advanced Peripherals hides your message by default with $)
@@ -19,7 +19,7 @@ local CHAT_PREFIX = "!"                     -- prefix for all chat commands (ex.
 -- after enabling secure mode, you won't be able to terminate the program
 -- thus you won't be able to modify this config
 -- and will need to run `$!quickpay securemode off` to turn it off until next reboot.
-local SECURE_MODE = true
+local SECURE_MODE = false
 --- CONFIG ---
 
 if SECURE_MODE then
@@ -145,13 +145,15 @@ end
 local function commandHelp(args)
     local helpMessage = [[
 Available commands:
-- !pay <username> <amount> : Send money to another player (must be the BoCC username)
-- !quickpay                : Display QuickPay commands
-- !quickpay help           : Display this help message
-- !quickpay setlimit <amount> : Set the maximum amount of money you can send until next reboot
+- !pay <username> <amount>      : Send money to another player (must be the BoCC username)
+- !quickpay                     : Display QuickPay commands
+- !quickpay help                : Display this help message
+- !quickpay help <command>      : Display help for a specific command
+- !quickpay setlimit <amount>   : Set the maximum amount of money you can send until next reboot
 - !quickpay securemode (on|off) : Enable or disable secure mode until next reboot
-- !quickpay reboot          : Reboot the QuickPay computer
-- !quickpay autodestruct  : Deletes all files associated with BoCC QuickPay
+- !quickpay reboot              : Reboot the QuickPay computer
+- !quickpay autodestruct        : Deletes all files associated with BoCC QuickPay
+- !quickpay pastelogs           : Will upload the QuickPay logs to pastebin
     ]]
     helpMessage = helpMessage:gsub("!", CHAT_PREFIX)
 
@@ -174,12 +176,45 @@ Subcommands for '!quickpay':
             chatbox.sendMessageToPlayer("Secure Mode:\n- securemode on\n- securemode off", ADMIN_USERNAME, "BoCC QuickPay")
         elseif args[3] == "autodestruct" then
             chatbox.sendMessageToPlayer("Auto Destruct:\n- autodestruct", ADMIN_USERNAME, "BoCC QuickPay")
+        elseif args[3] == "pastelogs" then
+            chatbox.sendMessageToPlayer("Upload logs to pastebin:\n- pastelogs", ADMIN_USERNAME, "BoCC QuickPay")
         else
             chatbox.sendMessageToPlayer(subHelpMessage, ADMIN_USERNAME, "BoCC QuickPay")
         end
     end
 end
 
+local function upload_file_to_pastebin(filename)
+    local sPath = shell.resolve(filename)
+    if not fs.exists(sPath) or fs.isDir(sPath) then
+        logging.error("No such file (logs.txt) for upload")
+        return nil
+    end
+    local sName = fs.getName(sPath)
+    local file = fs.open(sPath, "r")
+    local sText = file.readAll()
+    file.close()
+    logging.debug("Connecting to pastebin...")
+    local key = "0ec2eb25b6166c0c27a394ae118ad829"
+    local response = http.post(
+        "https://pastebin.com/api/api_post.php",
+        "api_option=paste&" ..
+        "api_dev_key=" .. key .. "&" ..
+        "api_paste_format=lua&" ..
+        "api_paste_name=" .. textutils.urlEncode(sName) .. "&" ..
+        "api_paste_code=" .. textutils.urlEncode(sText)
+    )
+    if response then
+        logging.success("Successfully uploaded")
+        local sResponse = response.readAll()
+        response.close()
+        local sCode = string.match(sResponse, "[^/]+$")
+        return sCode
+    else
+        logging.error("Failed upload to pastebin")
+        return nil
+    end
+end
 
 local function handleChatCommand(args)
     if args[1] == CHAT_PREFIX .. "pay" then
@@ -242,6 +277,26 @@ local function handleChatCommand(args)
             fs.delete("logging")
             fs.delete("startup.lua")
             os.reboot()
+        elseif args[2] == "pastelogs" then
+            local pastecode = upload_file_to_pastebin("logs.txt")
+            if pastecode ~= nil then
+                local message = textutils.serializeJSON({
+                    {text = "Logs uploaded to pastebin! ", color = "red"}, 
+                    {
+                        text = "https://pastebin.com/" .. pastecode,
+                        underlined = true,
+                        color = "aqua",
+                        clickEvent = {
+                            action = "open_url",
+                            value = "https://pastebin.com/" .. pastecode
+                        }
+                    },
+                })
+                
+                chatbox.sendFormattedMessageToPlayer(message, ADMIN_USERNAME, "&c&2BoCC QuickPay", "[]", "&c&2")
+            else
+                chatbox.sendToastToPlayer("Failed pasting logs", "BoCC QuickPay", ADMIN_USERNAME, "&4&lerror", "()", "&c&l")
+            end
         end
     elseif args[1] == CHAT_PREFIX .. "help" then
         commandHelp(args)
@@ -292,6 +347,50 @@ local function main()
                 logging.warning("Exiting cleanly.")
                 error("terminate", 999)
                 return
+            end
+        elseif eventData[1] == "disk" then
+            local side = eventData[2]
+            local disk = peripheral.wrap(side)
+            if disk ~= nil then
+                local disk_id = disk.getDiskID()
+                local mount_path = disk.getMountPath()
+                logging.debug(mount_path)
+                logging.debug(tostring(disk_id))
+                chatbox.sendToastToPlayer("Backing up logs on disk " .. tostring(disk_id), "BoCC QuickPay", ADMIN_USERNAME, "&c&2success", "()", "&c&2")
+                
+                local success, err = pcall(function()
+                    fs.copy("logs.txt", mount_path .. "/logs-bk-" .. os.date("%Y%m%d%H%M%S") .. ".txt")
+                end)
+                local success2, err2 = pcall(function()
+                    fs.delete("logs.txt")
+                end)
+
+                os.sleep(1)
+
+                if not success then
+                    if string.find(err, "Out of space") then
+                        logging.error("Failed to backup logs, the disk has no space left")
+                        chatbox.sendToastToPlayer("Disk is full.", "BoCC QuickPay", ADMIN_USERNAME, "&4&lerror", "()", "&c&l")
+                    else
+                        logging.error("Failed to backup logs: " .. err)
+                    end
+                    chatbox.sendToastToPlayer("Failed backing up logs, more info in the logs.txt file", "BoCC QuickPay", ADMIN_USERNAME, "&4&lerror", "()", "&c&l")
+                end
+
+                if not success2 then
+                    logging.error("Failed to delete local logs: " .. err2)
+                    chatbox.sendToastToPlayer("Failed deleting local logs, more info in the logs.txt file", "BoCC QuickPay", ADMIN_USERNAME, "&4&lerror", "()", "&c&l")
+                end
+                
+                chatbox.sendToastToPlayer("Backed up logs", "BoCC QuickPay", ADMIN_USERNAME, "&c&2success", "()", "&c&2")
+                disk.ejectDisk()
+            end
+        elseif eventData[1] == "peripheral" then
+            local side = eventData[2]
+            local wrapped_peripheral = peripheral.wrap(side)
+            if wrapped_peripheral ~= nil then
+                logging.debug("Attached peripheral: " .. side)
+                chatbox.sendToastToPlayer("A peripheral was attached on your QuickPay computer", "BoCC QuickPay", ADMIN_USERNAME, "&c&2warning", "()", "&c&2")
             end
         else
             logging.debug(textutils.serializeJSON(eventData))
