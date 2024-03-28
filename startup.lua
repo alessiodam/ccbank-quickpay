@@ -11,7 +11,7 @@
 --- CONFIG ---
 local ADMIN_USERNAME = "changeme"        -- your MC username
 local BANK_USERNAME = "changeme"         -- your BoCC username
-local BANK_PIN = "changeme"                     -- your BoCC PIN
+local BANK_PIN = "1234"                     -- your BoCC PIN
 local PAY_THRESHOLD = 500                   -- maximum amount of money allowed to send through chat
 local CHAT_PREFIX = "!"                     -- prefix for all chat commands (ex. !pay where ! is the prefix), cannot be $
 -- if you want to use $ as the prefix, set CHAT_PREFIX to "" (Advanced Peripherals hides your message by default with $)
@@ -19,7 +19,7 @@ local CHAT_PREFIX = "!"                     -- prefix for all chat commands (ex.
 -- after enabling secure mode, you won't be able to terminate the program
 -- thus you won't be able to modify this config
 -- and will need to run `$!quickpay securemode off` to turn it off until next reboot.
-local SECURE_MODE = false
+local SECURE_MODE = true
 --- CONFIG ---
 
 if SECURE_MODE then
@@ -51,20 +51,21 @@ local base_headers = {
 }
 
 -- funcs
-local function split(pString, pPattern)
+
+local function split(string_to_split, pattern)
     local Table = {}
-    local fpat = "(.-)" .. pPattern
+    local fpat = "(.-)" .. pattern
     local last_end = 1
-    local s, e, cap = pString:find(fpat, 1)
+    local s, e, cap = string_to_split:find(fpat, 1)
     while s do
         if s ~= 1 or cap ~= "" then
             table.insert(Table, cap)
         end
         last_end = e + 1
-        s, e, cap = pString:find(fpat, last_end)
+        s, e, cap = string_to_split:find(fpat, last_end)
     end
-    if last_end <= #pString then
-        cap = pString:sub(last_end)
+    if last_end <= #string_to_split then
+        cap = string_to_split:sub(last_end)
         table.insert(Table, cap)
     end
     return Table
@@ -150,7 +151,9 @@ Available commands:
 - !quickpay setlimit <amount> : Set the maximum amount of money you can send until next reboot
 - !quickpay securemode (on|off) : Enable or disable secure mode until next reboot
 - !quickpay reboot          : Reboot the QuickPay computer
+- !quickpay autodestruct  : Deletes all files associated with BoCC QuickPay
     ]]
+    helpMessage = helpMessage:gsub("!", CHAT_PREFIX)
 
     if args[2] == nil then
         chatbox.sendMessageToPlayer(helpMessage, ADMIN_USERNAME, "BoCC QuickPay")
@@ -161,6 +164,7 @@ Subcommands for '!quickpay':
 - securemode (on|off) : Enable or disable secure mode
 - reboot             : Reboot the computer
         ]]
+        subHelpMessage = helpMessage:gsub("!", CHAT_PREFIX)
 
         if args[3] == "setlimit" then
             chatbox.sendMessageToPlayer("Set Limit:\n- setlimit <amount>", ADMIN_USERNAME, "BoCC QuickPay")
@@ -168,6 +172,8 @@ Subcommands for '!quickpay':
             chatbox.sendMessageToPlayer("Reboot:\n- reboot", ADMIN_USERNAME, "BoCC QuickPay")
         elseif args[3] == "securemode" then
             chatbox.sendMessageToPlayer("Secure Mode:\n- securemode on\n- securemode off", ADMIN_USERNAME, "BoCC QuickPay")
+        elseif args[3] == "autodestruct" then
+            chatbox.sendMessageToPlayer("Auto Destruct:\n- autodestruct", ADMIN_USERNAME, "BoCC QuickPay")
         else
             chatbox.sendMessageToPlayer(subHelpMessage, ADMIN_USERNAME, "BoCC QuickPay")
         end
@@ -229,6 +235,13 @@ local function handleChatCommand(args)
                     chatbox.sendToastToPlayer("Limit raised to " .. args[3], "BoCC QuickPay", ADMIN_USERNAME, "&c&2success", "()", "&c&2")
                 end
             end
+        elseif args[2] == "autodestruct" then
+            logging.warning("Autodestructing...")
+            chatbox.sendToastToPlayer("Auto destructing", "BoCC QuickPay", ADMIN_USERNAME, "&4&lwarning", "()", "&c&l")
+            fs.delete("logs.txt")
+            fs.delete("logging")
+            fs.delete("startup.lua")
+            os.reboot()
         end
     elseif args[1] == CHAT_PREFIX .. "help" then
         commandHelp(args)
@@ -274,7 +287,7 @@ local function main()
         elseif eventData[1] == "terminate" then
             if SECURE_MODE then
                 logging.warning("SECURE mode prevents termination.")
-                logging.warning("You can send `$!quickpay securemode off` in the chat to turn it off temporarely.")
+                logging.warning("You can send `$" .. CHAT_PREFIX .. "quickpay securemode off` in the chat to turn it off temporarely.")
             else
                 logging.warning("Exiting cleanly.")
                 error("terminate", 999)
