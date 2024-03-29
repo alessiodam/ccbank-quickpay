@@ -26,7 +26,8 @@ if SECURE_MODE then
     os.pullEvent = os.pullEventRaw
 end
 
-os.loadAPI("logging")
+local expect = require("cc.expect").expect
+local logging = require("logging")
 local chatbox = peripheral.find("chatBox")
 
 -- base routes
@@ -52,23 +53,28 @@ local base_headers = {
 
 -- funcs
 
-local function split(string_to_split, pattern)
-    local Table = {}
-    local fpat = "(.-)" .. pattern
-    local last_end = 1
-    local s, e, cap = string_to_split:find(fpat, 1)
-    while s do
-        if s ~= 1 or cap ~= "" then
-            table.insert(Table, cap)
+local function split_str(inputstr, sep, split_count)
+    expect(1, inputstr, "string")
+    expect(2, sep, "string", "nil")
+    expect(3, split_count, "number", "nil")
+    if sep == nil then
+        -- If the separator is nil, we default to whitespace
+        sep = "%s"
+    end
+    if split_count == nil then
+        split_count = -1
+    end
+    local splitted_table = {}
+    local splitted_amount = 0
+    for str in string.gmatch(inputstr, "([^" .. sep .. "]+)") do
+        if splitted_amount == split_count then
+            break
+        else
+            table.insert(splitted_table, str)
+            splitted_amount = splitted_amount + 1
         end
-        last_end = e + 1
-        s, e, cap = string_to_split:find(fpat, last_end)
     end
-    if last_end <= #string_to_split then
-        cap = string_to_split:sub(last_end)
-        table.insert(Table, cap)
-    end
-    return Table
+    return splitted_table
 end
 
 local function login()
@@ -157,30 +163,18 @@ Available commands:
     ]]
     helpMessage = helpMessage:gsub("!", CHAT_PREFIX)
 
-    if args[2] == nil then
+    if args[3] == nil then
         chatbox.sendMessageToPlayer(helpMessage, ADMIN_USERNAME, "BoCC QuickPay")
-    elseif args[2] == "quickpay" then
-        local subHelpMessage = [[
-Subcommands for '!quickpay':
-- setlimit <amount> : Set the maximum amount a player can send
-- securemode (on|off) : Enable or disable secure mode
-- reboot             : Reboot the computer
-        ]]
-        subHelpMessage = helpMessage:gsub("!", CHAT_PREFIX)
-
-        if args[3] == "setlimit" then
-            chatbox.sendMessageToPlayer("Set Limit:\n- setlimit <amount>", ADMIN_USERNAME, "BoCC QuickPay")
-        elseif args[3] == "reboot" then
-            chatbox.sendMessageToPlayer("Reboot:\n- reboot", ADMIN_USERNAME, "BoCC QuickPay")
-        elseif args[3] == "securemode" then
-            chatbox.sendMessageToPlayer("Secure Mode:\n- securemode on\n- securemode off", ADMIN_USERNAME, "BoCC QuickPay")
-        elseif args[3] == "autodestruct" then
-            chatbox.sendMessageToPlayer("Auto Destruct:\n- autodestruct", ADMIN_USERNAME, "BoCC QuickPay")
-        elseif args[3] == "pastelogs" then
-            chatbox.sendMessageToPlayer("Upload logs to pastebin:\n- pastelogs", ADMIN_USERNAME, "BoCC QuickPay")
-        else
-            chatbox.sendMessageToPlayer(subHelpMessage, ADMIN_USERNAME, "BoCC QuickPay")
-        end
+    elseif args[3] == "setlimit" then
+        chatbox.sendMessageToPlayer("Set Limit:\n- setlimit <amount>", ADMIN_USERNAME, "BoCC QuickPay")
+    elseif args[3] == "reboot" then
+        chatbox.sendMessageToPlayer("Reboot:\n- reboot", ADMIN_USERNAME, "BoCC QuickPay")
+    elseif args[3] == "securemode" then
+        chatbox.sendMessageToPlayer("Secure Mode:\n- securemode on\n- securemode off", ADMIN_USERNAME, "BoCC QuickPay")
+    elseif args[3] == "autodestruct" then
+        chatbox.sendMessageToPlayer("Auto Destruct:\n- autodestruct", ADMIN_USERNAME, "BoCC QuickPay")
+    elseif args[3] == "pastelogs" then
+        chatbox.sendMessageToPlayer("Upload logs to pastebin:\n- pastelogs", ADMIN_USERNAME, "BoCC QuickPay")
     end
 end
 
@@ -232,8 +226,11 @@ local function handleChatCommand(args)
             else
                 local transaction_response = create_transaction(target, amount)
                 if not transaction_response.success then
-                    logging.error(transaction_response)
-                    chatbox.sendToastToPlayer("Could not send the money! error: " .. transaction_response, "BoCC QuickPay", ADMIN_USERNAME, "&4&lerror", "()", "&c&l")
+                    if transaction_response.message ~= nil then
+                        chatbox.sendToastToPlayer("Could not send the money! " .. transaction_response.message, "BoCC QuickPay", ADMIN_USERNAME, "&4&lerror", "()", "&c&l")
+                    else
+                        chatbox.sendToastToPlayer("Could not send the money! Error in logs.txt", "BoCC QuickPay", ADMIN_USERNAME, "&4&lerror", "()", "&c&l")
+                    end
                 else
                     if transaction_response.success then
                         logging.success("sent " .. amount .. " to " .. target .. " with transaction ID: " .. transaction_response.transaction_id)
@@ -246,7 +243,9 @@ local function handleChatCommand(args)
             end
         end
     elseif args[1] == CHAT_PREFIX .. "quickpay" then
-        if args[2] == "reboot" then
+        if args[2] == "help" then
+            commandHelp(args)
+        elseif args[2] == "reboot" then
             chatbox.sendToastToPlayer("Rebooting", "BoCC QuickPay", ADMIN_USERNAME, "&c&2success", "()", "&c&2")
             logging.warning("Rebooting after player command.")
             os.reboot()
@@ -298,8 +297,6 @@ local function handleChatCommand(args)
                 chatbox.sendToastToPlayer("Failed pasting logs", "BoCC QuickPay", ADMIN_USERNAME, "&4&lerror", "()", "&c&l")
             end
         end
-    elseif args[1] == CHAT_PREFIX .. "help" then
-        commandHelp(args)
     end
 end
 
@@ -326,7 +323,7 @@ local function main()
             -- eventData[4] = uuid
             -- eventData[5] = is hidden
             if eventData[2] == ADMIN_USERNAME then
-                local args = split(eventData[3], " ")
+                local args = split_str(eventData[3], " ")
                 handleChatCommand(args)
             end
         elseif eventData[1] == "websocket_message" then
@@ -412,16 +409,16 @@ if not success then
         return
     end
     local success2, result2 = pcall(function()
-        logging.error(debug.traceback())
+        logging.error("Success: " .. tostring(success) .. "; Result: " .. tostring(result))
     end)
     if not success2 then
-        logging.error("Failed to log error: " .. result2)
+        logging.error("Failed to log error: " .. tostring(result2))
     end
     local success3, result3 = pcall(function()
         chatbox.sendToastToPlayer("Internal error. Logs in logs.txt", "BoCC QuickPay", ADMIN_USERNAME, "&4&lINTERNAL ERROR", "()", "&c&l")
     end)
     if not success3 then
-        logging.error("Failed to send error toast: " .. result3)
+        logging.error("Failed to send error toast: " .. tostring(result3))
     end
     os.sleep(0.5)
     os.reboot()
