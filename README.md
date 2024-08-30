@@ -1,3 +1,6 @@
+# Deprecation warning
+> ⚠️Bank Of ComputerCraft was taken offline 29-08-2024 because I didn't have enough time to maintain it.
+
 # Bank Of ComputerCraft QuickPay (BoCC QuickPay)
 
 BoCC QuickPay is a convenient and user-friendly Minecraft plugin that enables players to conduct transactions using the Minecraft chat interface. Whether you need to send or receive payments, BoCC QuickPay simplifies the process, allowing for seamless in-game money transfers.
